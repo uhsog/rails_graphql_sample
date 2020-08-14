@@ -1,0 +1,57 @@
+name: <任意のaction名>
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - README.md
+      - docs/**
+
+jobs:
+  container-job:
+    runs-on: ubuntu-latest
+    container:
+      image: 指定したrubyのイメージを使う ex)ruby:2.7.0
+
+    services:
+      postgres:
+        image: postgres:12
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v1
+        with:
+          path: vendor/bundle
+          key: bundle-${{ hashFiles('**/Gemfile.lock') }}
+          restore-keys: |
+            bundle-
+
+      - name: Set up yarn and node
+        run: |
+          curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
+          echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
+          curl -sL https://deb.nodesource.com/setup_10.x | bash -
+          apt-get update -qq
+          apt-get install -y nodejs yarn
+
+      - name: Bundle install & Prepare database
+        run: |
+          gem install bundler
+          bundle install --path vendor/bundle --jobs 4 --retry 3
+          bin/rails db:prepare
+          bin/rails yarn:install
+      - name: Exec test
+        run: rails test (or bundle exec rspec など)
+
+    env:
+      DB_HOST: postgres # this is needed
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      RAILS_ENV: test
